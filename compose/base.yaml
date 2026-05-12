@@ -1,0 +1,34 @@
+services:
+  thor-solo:
+    image: ghcr.io/vechain/thor:latest
+    container_name: thor-solo
+    hostname: thor-solo
+    command:
+      - solo
+      - --on-demand
+      - --persist
+      - --api-addr=0.0.0.0:8669
+      - --api-cors=*
+      - --gas-limit=40000000
+      - --txpool-limit=10000
+      - --txpool-limit-per-account=256
+    ports:
+      - "8669:8669"
+    volumes:
+      - thor-data:/root/.org.vechain.thor
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8669/blocks/best || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - vechain-thor
+
+networks:
+  vechain-thor:
+    external: true
+
+volumes:
+  thor-data:
+    name: vechain-dev-thor-data

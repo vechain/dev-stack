@@ -1,0 +1,30 @@
+{
+  "name": "@vechain/dev-stack",
+  "version": "0.1.0-alpha.0",
+  "description": "Shared local dev environment for VeChain projects: thor-solo + indexer + block-explorer, with per-project address registration.",
+  "type": "module",
+  "main": "./lib/register.mjs",
+  "types": "./lib/register.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/register.d.ts",
+      "import": "./lib/register.mjs"
+    }
+  },
+  "bin": {
+    "vechain-dev": "./bin/vechain-dev.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "compose/",
+    "genesis/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
