@@ -1,26 +1,50 @@
-name: Publish to npm
+name: Release
 
 on:
-  push:
-    tags:
-      - 'v.*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Version bump'
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+          - prepatch
+          - preminor
+          - premajor
+          - prerelease
+      preid:
+        description: 'Prerelease identifier (used with pre* types, e.g. alpha, beta, rc)'
+        required: false
+        default: alpha
+      dry_run:
+        description: 'Dry run (skip git push, npm publish, and GitHub Release)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout tag
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: main
+          fetch-depth: 0
+          ssh-key: ${{ secrets.VECHAINCI_SSH_PRIVATE_KEYS }}
+          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,32 +52,61 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Resolve version from tag
-        id: version
+      - name: Configure git
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v.}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Tag '$TAG' does not resolve to a valid semver: '$VERSION'" >&2
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          git config user.name 'vechain-ci'
+          git config user.email 'vechain.ci@vechain.org'
 
-      - name: Set package.json version
-        run: npm pkg set version="${{ steps.version.outputs.version }}"
+      - name: Bump version, commit and tag
+        id: bump
+        run: |
+          if [[ "${{ inputs.release_type }}" == pre* ]]; then
+            npm version "${{ inputs.release_type }}" \
+              --preid="${{ inputs.preid }}" \
+              -m "chore(release): v%s"
+          else
+            npm version "${{ inputs.release_type }}" \
+              -m "chore(release): v%s"
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "dist_tag=next" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push commit and tag
+        if: ${{ !inputs.dry_run }}
+        run: git push --follow-tags origin HEAD:main
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access public --tag "${{ steps.bump.outputs.dist_tag }}" --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: ${{ steps.bump.outputs.tag }}
           generate_release_notes: true
+          prerelease: ${{ steps.bump.outputs.prerelease == 'true' }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### Release ${{ steps.bump.outputs.tag }}"
+            echo ""
+            echo "- Version: \`${{ steps.bump.outputs.version }}\`"
+            echo "- npm dist-tag: \`${{ steps.bump.outputs.dist_tag }}\`"
+            echo "- Dry run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
