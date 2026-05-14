@@ -33,12 +33,16 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@11.5.1
 
-      - name: Set version from tag
+      - name: Verify version matches tag
         run: |
           TAG='${{ github.event.release.tag_name }}'
-          VERSION="${TAG#v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          TAG_VERSION="${TAG#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
           if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
             echo "DIST_TAG=next" >> "$GITHUB_ENV"
           else
