@@ -2,6 +2,10 @@
   "name": "@vechain/dev-stack",
   "version": "0.1.0",
   "description": "Shared local dev environment for VeChain projects: thor-solo + indexer + block-explorer, with per-project address registration.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vechain/dev-stack.git"
+  },
   "type": "module",
   "main": "./lib/register.mjs",
   "types": "./lib/register.d.ts",
