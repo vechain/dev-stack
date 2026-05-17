@@ -42,7 +42,7 @@ services:
       - vechain-thor
 
   vechain-indexer:
-    image: ${VECHAIN_DEV_INDEXER_IMAGE:-ghcr.io/vechain/vechain-indexer/indexer:6.28}
+    image: ${VECHAIN_DEV_INDEXER_IMAGE:-ghcr.io/vechain/vechain-indexer/indexer:6.29.2}
     container_name: vechain-indexer
     depends_on:
       mongo-setup:
@@ -59,7 +59,7 @@ services:
       - vechain-thor
 
   vechain-indexer-api:
-    image: ${VECHAIN_DEV_INDEXER_API_IMAGE:-ghcr.io/vechain/vechain-indexer/api:6.28}
+    image: ${VECHAIN_DEV_INDEXER_API_IMAGE:-ghcr.io/vechain/vechain-indexer/api:6.29.2}
     container_name: vechain-indexer-api
     depends_on:
       mongo-setup:
