@@ -1,11 +1,28 @@
 {
   "name": "@vechain/dev-stack",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared local dev environment for VeChain projects: thor-solo + indexer + block-explorer, with per-project address registration.",
+  "license": "MIT",
+  "author": "VeChain",
+  "homepage": "https://github.com/vechain/dev-stack#readme",
+  "bugs": {
+    "url": "https://github.com/vechain/dev-stack/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vechain/dev-stack.git"
   },
+  "keywords": [
+    "vechain",
+    "thor",
+    "thor-solo",
+    "indexer",
+    "block-explorer",
+    "dev-environment",
+    "docker-compose",
+    "blockchain",
+    "cli"
+  ],
   "type": "module",
   "main": "./lib/register.mjs",
   "types": "./lib/register.d.ts",
@@ -23,10 +40,15 @@
     "lib/",
     "compose/",
     "genesis/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "test": "node --test"
