@@ -1,5 +1,9 @@
 # @vechain/dev-stack
 
+[![npm version](https://img.shields.io/npm/v/@vechain/dev-stack.svg)](https://www.npmjs.com/package/@vechain/dev-stack)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node.js >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
+
 Shared local development environment for VeChain projects.
 
 Brings up one thor-solo node, one mongo, one vechain-indexer, and one block-explorer that multiple projects can share. Each project deploys its own contracts and registers their addresses with the shared stack; the indexer and explorer pick up the union.
