@@ -2,7 +2,7 @@
 
 Read this first. The user-facing `README.md` has install/usage docs; this file is the orientation an agent needs before changing anything here.
 
-This file follows the [AGENTS.md](https://agents.md/) convention — any coding agent (Claude Code, Codex, Cursor, Aider, etc.) should read it on session start.
+This file follows the [AGENTS.md](https://agents.md/) convention for this repository only — any coding agent (Claude Code, Codex, Cursor, Aider, etc.) working in this source repo should read it on session start. It is not published with the npm package, so downstream consumer repos installed from npm will not have this file.
 
 ## What this package is
 
