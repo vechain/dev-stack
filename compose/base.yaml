@@ -15,7 +15,7 @@ services:
     ports:
       - "8669:8669"
     volumes:
-      - thor-data:/root/.org.vechain.thor
+      - thor-data:/home/thor/.org.vechain.thor
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8669/blocks/best || exit 1
       interval: 5s
