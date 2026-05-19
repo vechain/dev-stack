@@ -48,7 +48,7 @@ This writes `~/.vechain-dev/config/my-project.json`.
 
 ```bash
 vechain-dev up      # ensure shared infra, run deploy, sync, restart indexer/explorer, exec dev
-vechain-dev down    # stop only this project's overlay services; shared infra stays up
+vechain-dev down    # stop the stack (thor state preserved; mongo is ephemeral)
 vechain-dev reset   # nuke all shared infra, volumes, and ~/.vechain-dev/
 ```
 

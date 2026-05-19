@@ -6,8 +6,6 @@ services:
     command: mongod --replSet rs0 --bind_ip_all --port 27017
     ports:
       - "27017:27017"
-    volumes:
-      - mongo-data:/data/db
     healthcheck:
       test: >
         mongosh --quiet --eval "
@@ -42,7 +40,7 @@ services:
       - vechain-thor
 
   vechain-indexer:
-    image: ${VECHAIN_DEV_INDEXER_IMAGE:-ghcr.io/vechain/vechain-indexer/indexer:6.31.1}
+    image: ${VECHAIN_DEV_INDEXER_IMAGE:-ghcr.io/vechain/vechain-indexer/indexer:6.31.2}
     container_name: vechain-indexer
     depends_on:
       mongo-setup:
@@ -60,7 +58,7 @@ services:
       - vechain-thor
 
   vechain-indexer-api:
-    image: ${VECHAIN_DEV_INDEXER_API_IMAGE:-ghcr.io/vechain/vechain-indexer/api:6.31.1}
+    image: ${VECHAIN_DEV_INDEXER_API_IMAGE:-ghcr.io/vechain/vechain-indexer/api:6.31.2}
     container_name: vechain-indexer-api
     depends_on:
       mongo-setup:
@@ -78,7 +76,3 @@ services:
 networks:
   vechain-thor:
     external: true
-
-volumes:
-  mongo-data:
-    name: vechain-dev-mongo-data
