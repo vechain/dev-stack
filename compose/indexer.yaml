@@ -6,6 +6,9 @@ services:
     command: mongod --replSet rs0 --bind_ip_all --port 27017
     ports:
       - "27017:27017"
+    tmpfs:
+      - /data/db
+      - /data/configdb
     healthcheck:
       test: >
         mongosh --quiet --eval "
