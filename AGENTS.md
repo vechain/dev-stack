@@ -66,7 +66,7 @@ Two things consumers depend on. Any change here is a breaking change for every d
 
 ## Things that commonly surprise
 
-- `vechain-dev down` stops the whole stack (shared + overlay). The thor-data volume is preserved — chain state, deployed contracts, and any test fixtures survive. Mongo has no named volume, so its data dies with the container and the indexer reindexes from scratch on next `up`. Use `vechain-dev reset` only when you want to wipe thor too.
+- `vechain-dev down` stops the whole stack (shared + overlay). The thor-data volume is preserved — chain state, deployed contracts, and any test fixtures survive. Mongo's `/data/db` and `/data/configdb` are mounted as `tmpfs` (RAM-backed) so the indexer reindexes from scratch on every `up`. The tmpfs is necessary because the `mongo:8` image declares `VOLUME /data/db` in its Dockerfile — without an explicit override, Docker would auto-create anonymous volumes that survive container recreation. Use `vechain-dev reset` only when you want to wipe thor too.
 - `up` always **force-recreates** indexer + indexer-api + block-explorer so they re-read the freshly merged env files. Don't optimise that away — it's how new addresses become visible without a manual restart.
 - If the consumer's deploy script forgets to call `registerAddresses`, `up` warns but proceeds. The merged env files will just be missing that project's addresses.
 - The indexer container gets `SPRING_PROFILES_ACTIVE=indexer,<union of project profiles>`. The indexer-api gets the same union **without** the `indexer` profile. This split is intentional.
