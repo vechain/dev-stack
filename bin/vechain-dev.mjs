@@ -5,13 +5,14 @@ import { loadConfig } from '../lib/config.mjs'
 import {
   composeDown,
   composeRecreate,
+  composeRm,
   composeUp,
   ensureNetwork,
   removeNetwork,
   waitHealthy,
 } from '../lib/docker.mjs'
 import { readAll, writeEnv } from '../lib/addressBook.mjs'
-import { hasCode, waitForThor } from '../lib/thor.mjs'
+import { waitForThor } from '../lib/thor.mjs'
 import { detail, error, info, step, warn } from '../lib/log.mjs'
 import { home } from '../lib/paths.mjs'
 
@@ -43,8 +44,11 @@ async function up() {
   await waitForThor()
   await waitHealthy('thor-solo')
 
-  step('recreating mongo (ephemeral state)')
-  await composeRecreate(['indexer.yaml'], ['mongo-node1', 'mongo-setup'])
+  step('clearing ephemeral services (mongo + indexer + explorer)')
+  await composeRm(
+    ['indexer.yaml', 'explorer.yaml'],
+    ['block-explorer', 'vechain-indexer-api', 'vechain-indexer', 'mongo-setup', 'mongo-node1'],
+  )
 
   step(`running deploy: ${cfg.deploy}`)
   await shellExec(cfg.deploy)
@@ -57,8 +61,11 @@ async function up() {
   const summary = await writeEnv(projects)
   detail(`${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
 
-  step('starting indexer + explorer')
-  await composeRecreate(SHARED_FILES, ['vechain-indexer', 'vechain-indexer-api', 'block-explorer'])
+  step('starting mongo + indexer + explorer (fresh state)')
+  await composeUp(
+    ['indexer.yaml', 'explorer.yaml'],
+    ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api', 'block-explorer'],
+  )
 
   info('shared stack ready')
   info('  thor-solo      → http://localhost:8669')
