@@ -38,10 +38,13 @@ async function up() {
   step('ensuring docker network')
   await ensureNetwork()
 
-  step('starting thor-solo + mongo')
-  await composeUp(['base.yaml', 'indexer.yaml'], ['thor-solo', 'mongo-node1'])
+  step('starting thor-solo (chain state preserved)')
+  await composeUp(['base.yaml'], ['thor-solo'])
   await waitForThor()
   await waitHealthy('thor-solo')
+
+  step('recreating mongo (ephemeral state)')
+  await composeRecreate(['indexer.yaml'], ['mongo-node1', 'mongo-setup'])
 
   step(`running deploy: ${cfg.deploy}`)
   await shellExec(cfg.deploy)
