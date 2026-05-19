@@ -68,13 +68,9 @@ async function up() {
 
 async function down() {
   const cfg = await loadConfig().catch(() => null)
-  if (cfg?.overlay) {
-    step(`stopping overlay services for ${cfg.project}`)
-    await composeDown([cfg.overlay])
-  } else {
-    info('no overlay declared — nothing project-specific to stop')
-    info('shared infra continues running for other projects; use `vechain-dev reset` to nuke everything')
-  }
+  const files = cfg?.overlay ? [...SHARED_FILES, cfg.overlay] : SHARED_FILES
+  step('stopping stack (thor state preserved)')
+  await composeDown(files)
 }
 
 async function reset() {
@@ -134,7 +130,7 @@ if (!cmd || cmd === '--help' || cmd === '-h') {
 
 Commands:
   up      ensure shared infra, run deploy, sync env, restart indexer/explorer, exec dev
-  down    stop this project's overlay services; shared infra continues
+  down    stop the stack (thor state preserved; mongo is ephemeral)
   reset   tear down all shared infra, volumes, and ~/.vechain-dev/
   sync    re-merge address book and recreate indexer/explorer
   status  show registered projects and service health
