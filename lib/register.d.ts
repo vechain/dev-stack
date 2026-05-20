@@ -15,3 +15,28 @@ export interface RegisterAddressesInput {
  * @returns the absolute path of the file written
  */
 export function registerAddresses(input: RegisterAddressesInput): Promise<string>
+
+export interface IsProjectDeployedOptions {
+  /** Thor RPC URL. Defaults to http://localhost:8669. */
+  rpcUrl?: string
+}
+
+export type ProjectDeploymentStatus =
+  | { deployed: true }
+  | { deployed: false; reason: 'not-registered' }
+  | { deployed: false; reason: 'missing-code'; address: string }
+
+/**
+ * Checks whether a previously-registered project still has all of its
+ * contracts on-chain. Returns `{ deployed: true }` only if every address in
+ * the project's registration file has code on the current chain.
+ *
+ * Use this from a project's deploy script (or rely on `vechain-dev up`,
+ * which calls this for you) instead of doing a per-project `getCode` check
+ * against an in-repo config file — those files are not part of the shared
+ * state and go stale across `vechain-dev reset`.
+ */
+export function isProjectDeployed(
+  project: string,
+  options?: IsProjectDeployedOptions,
+): Promise<ProjectDeploymentStatus>
