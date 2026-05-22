@@ -127,6 +127,12 @@ import { registerAddresses, isProjectDeployed } from '@vechain/dev-stack'
 
 Pass `expectedAddresses: { ENV_NAME: '0x…' }` to detect stale registrations (e.g. cached deployment artifacts pointing at a different address than the chain). This replaces the per-project artifact-wipe scripts some consumers maintain.
 
+## Running multiple checkouts of the same app
+
+`vechain-dev.config.mjs` is a per-checkout file, so two checkouts of the same repo can coexist by giving each its own `project` name locally. In the second checkout, edit the file to `project: 'multisig-2'` (don't commit) — the rest follows: separate registration file, separate `isProjectDeployed` answers, separate deploy lifecycle. thor-solo is shared.
+
+The indexer still merges env vars across projects, so two checkouts that register the same env-var names (e.g. `SAFE_EMITTER_CONTRACT`) will collide there. Contracts deploy correctly and registrations are distinct — the indexer is the only loose end.
+
 ## Endpoints
 
 | service        | URL                       |
