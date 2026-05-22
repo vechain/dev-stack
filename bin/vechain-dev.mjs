@@ -89,10 +89,10 @@ async function mergeAndRecreateInfra(cfg, { recreateExplorer = true } = {}) {
 
   if (recreateExplorer) {
     step('starting mongo + indexer + explorer (fresh state)')
-    await composeUp(['indexer.yaml', 'explorer.yaml'], services)
+    await composeUp(SHARED_FILES, services)
   } else {
     step('recreating indexer')
-    await composeRecreate(['indexer.yaml'], ['vechain-indexer', 'vechain-indexer-api'])
+    await composeRecreate(SHARED_FILES, ['vechain-indexer', 'vechain-indexer-api'])
   }
 }
 
@@ -110,7 +110,7 @@ async function up({ force = false, skip = false } = {}) {
   await ensureThor()
 
   step('clearing ephemeral services (mongo + indexer + explorer)')
-  await composeRm(['indexer.yaml', 'explorer.yaml'], INFRA_SERVICES)
+  await composeRm(SHARED_FILES, INFRA_SERVICES)
 
   await runDeployIfNeeded(cfg, { force, skip })
   await mergeAndRecreateInfra(cfg)
