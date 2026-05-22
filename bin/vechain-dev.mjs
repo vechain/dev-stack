@@ -4,20 +4,32 @@ import { rm } from 'node:fs/promises'
 import { loadConfig } from '../lib/config.mjs'
 import {
   composeDown,
+  composeLogs,
   composeRecreate,
   composeRm,
+  composeStop,
   composeUp,
   ensureNetwork,
   removeNetwork,
+  removeVolume,
   waitHealthy,
 } from '../lib/docker.mjs'
 import { readAll, writeEnv } from '../lib/addressBook.mjs'
-import { waitForThor } from '../lib/thor.mjs'
+import { waitForIndexerApi, waitForThor } from '../lib/thor.mjs'
 import { isProjectDeployed } from '../lib/check.mjs'
 import { detail, error, info, step, warn } from '../lib/log.mjs'
 import { home } from '../lib/paths.mjs'
 
 const SHARED_FILES = ['base.yaml', 'indexer.yaml', 'explorer.yaml']
+const INFRA_SERVICES = [
+  'mongo-node1',
+  'mongo-setup',
+  'vechain-indexer',
+  'vechain-indexer-api',
+  'block-explorer',
+]
+const INDEXER_SERVICES = ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api']
+const INDEXER_LOG_SERVICES = ['vechain-indexer', 'vechain-indexer-api']
 
 async function shellExec(cmd, { exec = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -33,60 +45,168 @@ async function shellExec(cmd, { exec = false } = {}) {
   })
 }
 
-async function up({ force = false } = {}) {
-  const cfg = await loadConfig()
-  step(`project: ${cfg.project}`)
-
-  step('ensuring docker network')
-  await ensureNetwork()
-
-  step('starting thor-solo (chain state preserved)')
-  await composeUp(['base.yaml'], ['thor-solo'])
-  await waitForThor()
-  await waitHealthy('thor-solo')
-
-  step('clearing ephemeral services (mongo + indexer + explorer)')
-  await composeRm(
-    ['indexer.yaml', 'explorer.yaml'],
-    ['block-explorer', 'vechain-indexer-api', 'vechain-indexer', 'mongo-setup', 'mongo-node1'],
-  )
-
-  const status = force ? { deployed: false, reason: 'forced' } : await isProjectDeployed(cfg.project)
-  if (status.deployed) {
-    step(`contracts already deployed for '${cfg.project}' — skipping deploy (pass --redeploy to force)`)
-  } else {
-    if (status.reason === 'missing-code') {
-      detail(`registered address ${status.address} has no code on-chain — redeploying`)
-    } else if (status.reason === 'not-registered') {
-      detail(`no registration found for '${cfg.project}' — deploying`)
-    } else if (status.reason === 'forced') {
-      detail('--redeploy: forcing deploy')
-    }
-    step(`running deploy: ${cfg.deploy}`)
-    await shellExec(cfg.deploy)
-  }
-
+async function mergeAddressBook(cfg) {
   step('merging address book')
   const projects = await readAll()
-  if (!projects.find((p) => p.project === cfg.project)) {
+  if (cfg && !projects.find((p) => p.project === cfg.project)) {
     warn(`no registration for project '${cfg.project}' — did the deploy step call registerAddresses?`)
   }
   const summary = await writeEnv(projects)
   detail(`${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
+}
 
-  step('starting mongo + indexer + explorer (fresh state)')
-  await composeUp(
-    ['indexer.yaml', 'explorer.yaml'],
-    ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api', 'block-explorer'],
+async function ensureThor() {
+  step('ensuring docker network')
+  await ensureNetwork()
+  step('starting thor-solo (chain state preserved)')
+  await composeUp(SHARED_FILES, ['thor-solo'])
+  await waitForThor()
+  await waitHealthy('thor-solo')
+}
+
+async function runDeployIfNeeded(cfg, { force, skip }) {
+  if (skip) {
+    step(`--skip-deploy: not running '${cfg.deploy}'`)
+    return
+  }
+  const status = force ? { deployed: false, reason: 'forced' } : await isProjectDeployed(cfg.project)
+  if (status.deployed) {
+    step(`contracts already deployed for '${cfg.project}' — skipping deploy (pass --redeploy to force)`)
+    return
+  }
+  if (status.reason === 'missing-code') {
+    detail(`registered address ${status.address} has no code on-chain — redeploying`)
+  } else if (status.reason === 'not-registered') {
+    detail(`no registration found for '${cfg.project}' — deploying`)
+  } else if (status.reason === 'address-mismatch') {
+    detail(`registered ${status.name}=${status.actual ?? '(missing)'} differs from expected ${status.expected} — redeploying`)
+  } else if (status.reason === 'forced') {
+    detail('--redeploy: forcing deploy')
+  }
+  step(`running deploy: ${cfg.deploy}`)
+  await shellExec(cfg.deploy)
+  await verifyDeployed(cfg)
+}
+
+// Re-check after the deploy command runs. The command can exit 0 without
+// actually deploying (e.g. turbo cache hit replays old logs without
+// re-executing) — in that case the registration is missing/stale and the
+// indexer comes up pointing at nothing. Fail loudly rather than letting
+// the user discover this when their app breaks.
+async function verifyDeployed(cfg) {
+  const status = await isProjectDeployed(cfg.project)
+  if (status.deployed) return
+  const reason =
+    status.reason === 'not-registered'
+      ? `no registration was written to ~/.vechain-dev/config/${cfg.project}.json`
+      : status.reason === 'missing-code'
+        ? `registered address ${status.address} has no code on-chain`
+        : `registration is stale (${status.reason})`
+  throw new Error(
+    `deploy command '${cfg.deploy}' exited successfully but '${cfg.project}' is not deployed: ${reason}.\n` +
+      `Most likely causes:\n` +
+      `  - the deploy script didn't call registerAddresses\n` +
+      `  - a build tool (turbo, nx, etc.) cached the deploy task and replayed its logs without re-running it — disable caching for deploy tasks`,
   )
+}
 
+function printEndpoints() {
   info('shared stack ready')
   info('  thor-solo      → http://localhost:8669')
   info('  indexer-api    → http://localhost:8089')
   info('  block-explorer → http://localhost:8088')
+}
 
-  step(`exec: ${cfg.dev}`)
-  await shellExec(cfg.dev, { exec: true })
+async function waitForInfra({ explorer = true } = {}) {
+  step('waiting for mongo + indexer-api to be ready')
+  await waitHealthy('mongo-node1')
+  await waitForIndexerApi()
+  if (explorer) await waitHealthy('block-explorer')
+}
+
+async function up({ force = false, skip = false } = {}) {
+  const cfg = await loadConfig()
+  step(`project: ${cfg.project}`)
+
+  await ensureThor()
+
+  step('clearing ephemeral services (mongo + indexer + explorer)')
+  await composeRm(SHARED_FILES, INFRA_SERVICES)
+
+  await runDeployIfNeeded(cfg, { force, skip })
+
+  await mergeAddressBook(cfg)
+  step('starting mongo + indexer + explorer (fresh state)')
+  await composeUp(SHARED_FILES, INFRA_SERVICES)
+  await waitForInfra()
+
+  printEndpoints()
+}
+
+async function deploy() {
+  const cfg = await loadConfig()
+  step(`project: ${cfg.project}`)
+  await waitForThor()
+  step(`running deploy: ${cfg.deploy}`)
+  await shellExec(cfg.deploy)
+  await verifyDeployed(cfg)
+  await mergeAddressBook(cfg)
+  step('recreating indexer')
+  await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
+  await waitForInfra({ explorer: false })
+  info('deploy complete')
+}
+
+async function soloUp() {
+  await ensureThor()
+  info('thor-solo → http://localhost:8669')
+}
+
+async function soloDown() {
+  step('stopping thor-solo (chain state preserved)')
+  await composeStop(SHARED_FILES, ['thor-solo'])
+}
+
+async function soloLogs({ follow = false } = {}) {
+  await composeLogs(SHARED_FILES, ['thor-solo'], { follow })
+}
+
+async function soloClean() {
+  step('removing thor-solo container + chain data volume')
+  await composeRm(SHARED_FILES, ['thor-solo'])
+  await removeVolume('vechain-dev-thor-data')
+}
+
+async function indexerUp() {
+  step('ensuring docker network')
+  await ensureNetwork()
+  await mergeAddressBook()
+  step('starting mongo + indexer')
+  await composeUp(SHARED_FILES, INDEXER_SERVICES)
+  await waitForInfra({ explorer: false })
+  info('indexer-api → http://localhost:8089')
+}
+
+async function indexerDown() {
+  step('stopping indexer services (mongo state is wiped — tmpfs)')
+  await composeStop(SHARED_FILES, INDEXER_SERVICES)
+}
+
+async function indexerLogs({ follow = false } = {}) {
+  await composeLogs(SHARED_FILES, INDEXER_LOG_SERVICES, { follow })
+}
+
+async function indexerRecreate() {
+  await mergeAddressBook()
+  step('recreating indexer')
+  await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
+  await waitForInfra({ explorer: false })
+  info('indexer-api → http://localhost:8089')
+}
+
+async function indexerClean() {
+  step('removing indexer + mongo containers (mongo tmpfs is wiped)')
+  await composeRm(SHARED_FILES, INDEXER_SERVICES)
 }
 
 async function down() {
@@ -96,23 +216,14 @@ async function down() {
   await composeDown(files)
 }
 
-async function reset() {
+async function clean() {
   step('tearing down shared infra + volumes')
   await composeDown(SHARED_FILES, { volumes: true }).catch((e) => warn(e.message))
   step(`removing ${home()}`)
   await rm(home(), { recursive: true, force: true })
   step('removing docker network')
   await removeNetwork()
-  info('reset complete')
-}
-
-async function sync() {
-  const projects = await readAll()
-  const summary = await writeEnv(projects)
-  step(`merged ${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
-  step('recreating indexer + explorer')
-  await composeRecreate(SHARED_FILES, ['vechain-indexer', 'vechain-indexer-api', 'block-explorer'])
-  info('sync complete')
+  info('clean complete')
 }
 
 async function status() {
@@ -145,38 +256,102 @@ async function status() {
   }
 }
 
+const HELP = `Usage: vechain-dev <command> [flags]
+
+Project lifecycle (requires vechain-dev.config.mjs):
+
+  up [--redeploy] [--skip-deploy]
+      Ensure shared infra and run deploy if needed. Exits when infra is ready —
+      start your frontend in a separate terminal (e.g. yarn frontend:dev).
+      --redeploy     force the deploy command even if contracts are already on-chain
+      --skip-deploy  bring infra up without running the deploy command
+
+  deploy
+      Run the project's deploy command and recreate the indexer (no thor/explorer restart).
+      Always runs — no on-chain check. Use when you've changed contracts but
+      the rest of the stack is already up.
+
+  down
+      Stop the full stack (thor state preserved; mongo is ephemeral).
+
+  clean
+      Tear down all shared infra, volumes, and ~/.vechain-dev/.
+
+  status
+      Show registered projects and service health.
+
+Service control (no config required):
+
+  solo up | down | logs [-f] | clean
+      Lifecycle for thor-solo only. Chain state preserved across 'down';
+      'clean' removes the container and the chain-data volume.
+
+  indexer up | down | logs [-f] | recreate | clean
+      Lifecycle for mongo + vechain-indexer + vechain-indexer-api.
+      'recreate' re-merges the address book and force-recreates the containers
+      (use after a project registers new addresses).
+      'clean' removes the containers and wipes the mongo tmpfs.
+
+Solo customization (env vars, all optional):
+  VECHAIN_DEV_THOR_IMAGE                     docker image (default ghcr.io/vechain/thor:latest)
+  VECHAIN_DEV_THOR_GAS_LIMIT                 block gas limit (default 40000000)
+  VECHAIN_DEV_THOR_TXPOOL_LIMIT              global txpool size (default 10000)
+  VECHAIN_DEV_THOR_TXPOOL_LIMIT_PER_ACCOUNT  per-account txpool size (default 256)
+  VECHAIN_DEV_THOR_API_CORS                  CORS origin (default *)
+  VECHAIN_DEV_GENESIS                        path to a custom genesis JSON
+`
+
 const argv = process.argv.slice(2)
-const cmd = argv[0]
-const flags = new Set(argv.slice(1).filter((a) => a.startsWith('--')))
+const [cmd, sub, ...rest] = argv
+const subFlags = new Set(rest.filter((a) => a.startsWith('--') || a === '-f'))
 
-const commands = {
-  up: () => up({ force: flags.has('--redeploy') }),
-  down,
-  reset,
-  sync,
-  status,
+async function dispatch() {
+  if (!cmd || cmd === '--help' || cmd === '-h') {
+    console.log(HELP)
+    process.exit(cmd ? 0 : 1)
+  }
+
+  if (cmd === 'solo') {
+    if (sub === 'up') return soloUp()
+    if (sub === 'down') return soloDown()
+    if (sub === 'logs') return soloLogs({ follow: subFlags.has('-f') || subFlags.has('--follow') })
+    if (sub === 'clean') return soloClean()
+    error(`unknown solo subcommand: ${sub ?? '(none)'} — expected up | down | logs | clean`)
+    process.exit(1)
+  }
+
+  if (cmd === 'indexer') {
+    if (sub === 'up') return indexerUp()
+    if (sub === 'down') return indexerDown()
+    if (sub === 'logs') return indexerLogs({ follow: subFlags.has('-f') || subFlags.has('--follow') })
+    if (sub === 'recreate') return indexerRecreate()
+    if (sub === 'clean') return indexerClean()
+    error(`unknown indexer subcommand: ${sub ?? '(none)'} — expected up | down | logs | recreate | clean`)
+    process.exit(1)
+  }
+
+  // Top-level commands accept their flags positionally as argv[1..]
+  const topFlags = new Set([sub, ...rest].filter((a) => a && (a.startsWith('--') || a === '-f')))
+  const has = (f) => topFlags.has(f)
+
+  switch (cmd) {
+    case 'up':
+      return up({ force: has('--redeploy'), skip: has('--skip-deploy') })
+    case 'deploy':
+      return deploy()
+    case 'down':
+      return down()
+    case 'clean':
+      return clean()
+    case 'status':
+      return status()
+    default:
+      error(`unknown command: ${cmd}`)
+      process.exit(1)
+  }
 }
 
-if (!cmd || cmd === '--help' || cmd === '-h') {
-  console.log(`Usage: vechain-dev <command> [flags]
-
-Commands:
-  up [--redeploy]  ensure shared infra, run deploy if needed, sync env, restart indexer/explorer, exec dev
-                   --redeploy forces the project's deploy command even if the contracts are already on-chain
-  down             stop the stack (thor state preserved; mongo is ephemeral)
-  reset            tear down all shared infra, volumes, and ~/.vechain-dev/
-  sync             re-merge address book and recreate indexer/explorer
-  status           show registered projects and service health
-`)
-  process.exit(cmd ? 0 : 1)
-}
-
-if (!commands[cmd]) {
-  error(`unknown command: ${cmd}`)
-  process.exit(1)
-}
-
-commands[cmd]().catch((err) => {
+dispatch().catch((err) => {
   error(err.message)
   process.exit(1)
 })

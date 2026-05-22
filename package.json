@@ -1,6 +1,6 @@
 {
   "name": "@vechain/dev-stack",
-  "version": "0.1.11",
+  "version": "0.2.0",
   "description": "Shared local dev environment for VeChain projects: thor-solo + indexer + block-explorer, with per-project address registration.",
   "license": "MIT",
   "author": "VeChain",
