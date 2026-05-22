@@ -85,6 +85,29 @@ async function runDeployIfNeeded(cfg, { force, skip }) {
   }
   step(`running deploy: ${cfg.deploy}`)
   await shellExec(cfg.deploy)
+  await verifyDeployed(cfg)
+}
+
+// Re-check after the deploy command runs. The command can exit 0 without
+// actually deploying (e.g. turbo cache hit replays old logs without
+// re-executing) — in that case the registration is missing/stale and the
+// indexer comes up pointing at nothing. Fail loudly rather than letting
+// the user discover this when their app breaks.
+async function verifyDeployed(cfg) {
+  const status = await isProjectDeployed(cfg.project)
+  if (status.deployed) return
+  const reason =
+    status.reason === 'not-registered'
+      ? `no registration was written to ~/.vechain-dev/config/${cfg.project}.json`
+      : status.reason === 'missing-code'
+        ? `registered address ${status.address} has no code on-chain`
+        : `registration is stale (${status.reason})`
+  throw new Error(
+    `deploy command '${cfg.deploy}' exited successfully but '${cfg.project}' is not deployed: ${reason}.\n` +
+      `Most likely causes:\n` +
+      `  - the deploy script didn't call registerAddresses\n` +
+      `  - a build tool (turbo, nx, etc.) cached the deploy task and replayed its logs without re-running it — disable caching for deploy tasks`,
+  )
 }
 
 function printEndpoints() {
@@ -118,6 +141,7 @@ async function deploy() {
   await waitForThor()
   step(`running deploy: ${cfg.deploy}`)
   await shellExec(cfg.deploy)
+  await verifyDeployed(cfg)
   await mergeAddressBook(cfg)
   step('recreating indexer')
   await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
