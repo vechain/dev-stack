@@ -19,7 +19,6 @@ export default {
   project: 'my-project',
   profiles: ['safe', 'accounts', 'transactions'],
   deploy:  'yarn contracts:deploy:solo',
-  dev:     'yarn frontend:dev',
   // optional:
   // overlay: 'docker/overlay.yaml',
 }
@@ -49,15 +48,17 @@ This writes `~/.vechain-dev/config/my-project.json`.
 Project lifecycle — requires `vechain-dev.config.mjs`:
 
 ```bash
-vechain-dev up                  # ensure infra, deploy if needed, exec dev
+vechain-dev up                  # ensure infra, deploy if needed. Exits when infra is ready.
 vechain-dev up --redeploy       # force the deploy step even if contracts are on-chain
-vechain-dev up --skip-deploy    # bring infra + frontend up without running the deploy step
+vechain-dev up --skip-deploy    # bring infra up without running the deploy step
 vechain-dev deploy              # re-run deploy + recreate indexer (no thor/explorer restart)
 vechain-dev deploy --redeploy   # same, ignoring the on-chain deployment check
 vechain-dev down                # stop the full stack (thor state preserved; mongo is ephemeral)
 vechain-dev clean               # nuke all shared infra, volumes, and ~/.vechain-dev/
 vechain-dev status              # show registered projects and service health
 ```
+
+`up` does not run a frontend dev server — start that in a separate terminal (e.g. `yarn frontend:dev`). This keeps the frontend's lifecycle decoupled from contract redeploys: run `vechain-dev deploy` whenever you need fresh contracts; the frontend keeps running.
 
 Service control — no config required:
 
@@ -78,7 +79,7 @@ Typical `package.json`:
 
 ```json
 "scripts": {
-  "dev":              "vechain-dev up",
+  "dev:up":           "vechain-dev up",
   "dev:down":         "vechain-dev down",
   "dev:clean":        "vechain-dev clean",
   "dev:deploy":       "vechain-dev deploy",
@@ -93,6 +94,8 @@ Typical `package.json`:
   "indexer:clean":    "vechain-dev indexer clean"
 }
 ```
+
+Two-terminal day-to-day: terminal 1 `yarn dev:up`, terminal 2 your frontend dev server. Redeploy with `yarn dev:deploy` without touching the frontend.
 
 ## Customizing thor-solo
 

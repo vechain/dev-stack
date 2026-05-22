@@ -110,9 +110,6 @@ async function up({ force = false, skip = false } = {}) {
   await composeUp(SHARED_FILES, INFRA_SERVICES)
 
   printEndpoints()
-
-  step(`exec: ${cfg.dev}`)
-  await shellExec(cfg.dev, { exec: true })
 }
 
 async function deploy({ force = false } = {}) {
@@ -228,9 +225,10 @@ const HELP = `Usage: vechain-dev <command> [flags]
 Project lifecycle (requires vechain-dev.config.mjs):
 
   up [--redeploy] [--skip-deploy]
-      Ensure shared infra, run deploy if needed, restart indexer/explorer, exec dev.
+      Ensure shared infra and run deploy if needed. Exits when infra is ready —
+      start your frontend in a separate terminal (e.g. yarn frontend:dev).
       --redeploy     force the deploy command even if contracts are already on-chain
-      --skip-deploy  bring infra + frontend up without running the deploy command
+      --skip-deploy  bring infra up without running the deploy command
 
   deploy [--redeploy]
       Run the project's deploy command and recreate the indexer (no thor/explorer restart).
