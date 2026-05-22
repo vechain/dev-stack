@@ -11,6 +11,7 @@ import {
   composeUp,
   ensureNetwork,
   removeNetwork,
+  removeVolume,
   waitHealthy,
 } from '../lib/docker.mjs'
 import { readAll, writeEnv } from '../lib/addressBook.mjs'
@@ -139,6 +140,12 @@ async function soloLogs({ follow = false } = {}) {
   await composeLogs(SHARED_FILES, ['thor-solo'], { follow })
 }
 
+async function soloClean() {
+  step('removing thor-solo container + chain data volume')
+  await composeRm(SHARED_FILES, ['thor-solo'])
+  await removeVolume('vechain-dev-thor-data')
+}
+
 async function indexerUp() {
   step('ensuring docker network')
   await ensureNetwork()
@@ -162,6 +169,11 @@ async function indexerRecreate() {
   step('recreating indexer')
   await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
   info('indexer-api → http://localhost:8089')
+}
+
+async function indexerClean() {
+  step('removing indexer + mongo containers (mongo tmpfs is wiped)')
+  await composeRm(SHARED_FILES, INDEXER_SERVICES)
 }
 
 async function down() {
@@ -235,13 +247,15 @@ Project lifecycle (requires vechain-dev.config.mjs):
 
 Service control (no config required):
 
-  solo up | down | logs [-f]
-      Lifecycle for thor-solo only. Chain state preserved across down.
+  solo up | down | logs [-f] | clean
+      Lifecycle for thor-solo only. Chain state preserved across 'down';
+      'clean' removes the container and the chain-data volume.
 
-  indexer up | down | logs [-f] | recreate
+  indexer up | down | logs [-f] | recreate | clean
       Lifecycle for mongo + vechain-indexer + vechain-indexer-api.
       'recreate' re-merges the address book and force-recreates the containers
       (use after a project registers new addresses).
+      'clean' removes the containers and wipes the mongo tmpfs.
 
 Solo customization (env vars, all optional):
   VECHAIN_DEV_THOR_IMAGE                     docker image (default ghcr.io/vechain/thor:latest)
@@ -266,7 +280,8 @@ async function dispatch() {
     if (sub === 'up') return soloUp()
     if (sub === 'down') return soloDown()
     if (sub === 'logs') return soloLogs({ follow: subFlags.has('-f') || subFlags.has('--follow') })
-    error(`unknown solo subcommand: ${sub ?? '(none)'} — expected up | down | logs`)
+    if (sub === 'clean') return soloClean()
+    error(`unknown solo subcommand: ${sub ?? '(none)'} — expected up | down | logs | clean`)
     process.exit(1)
   }
 
@@ -275,7 +290,8 @@ async function dispatch() {
     if (sub === 'down') return indexerDown()
     if (sub === 'logs') return indexerLogs({ follow: subFlags.has('-f') || subFlags.has('--follow') })
     if (sub === 'recreate') return indexerRecreate()
-    error(`unknown indexer subcommand: ${sub ?? '(none)'} — expected up | down | logs | recreate`)
+    if (sub === 'clean') return indexerClean()
+    error(`unknown indexer subcommand: ${sub ?? '(none)'} — expected up | down | logs | recreate | clean`)
     process.exit(1)
   }
 

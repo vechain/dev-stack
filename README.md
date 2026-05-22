@@ -65,11 +65,13 @@ Service control — no config required:
 vechain-dev solo up             # start only thor-solo
 vechain-dev solo down           # stop only thor-solo (chain state preserved)
 vechain-dev solo logs [-f]      # tail thor-solo logs
+vechain-dev solo clean          # remove the container and the chain-data volume
 
 vechain-dev indexer up          # start mongo + vechain-indexer + vechain-indexer-api
-vechain-dev indexer down        # stop these services
+vechain-dev indexer down        # stop these services (mongo tmpfs preserved)
 vechain-dev indexer logs [-f]   # tail indexer + indexer-api logs (skips mongo noise)
 vechain-dev indexer recreate    # re-merge address book + force-recreate the indexer containers
+vechain-dev indexer clean       # remove the containers (mongo tmpfs is wiped)
 ```
 
 Typical `package.json`:
@@ -83,10 +85,12 @@ Typical `package.json`:
   "solo:up":          "vechain-dev solo up",
   "solo:down":        "vechain-dev solo down",
   "solo:logs":        "vechain-dev solo logs -f",
+  "solo:clean":       "vechain-dev solo clean",
   "indexer:up":       "vechain-dev indexer up",
   "indexer:down":     "vechain-dev indexer down",
   "indexer:logs":     "vechain-dev indexer logs -f",
-  "indexer:recreate": "vechain-dev indexer recreate"
+  "indexer:recreate": "vechain-dev indexer recreate",
+  "indexer:clean":    "vechain-dev indexer clean"
 }
 ```
 
