@@ -46,41 +46,47 @@ This writes `~/.vechain-dev/config/my-project.json`.
 
 ## Commands
 
-Full orchestration (requires `vechain-dev.config.mjs`):
+Project lifecycle — requires `vechain-dev.config.mjs`:
 
 ```bash
-vechain-dev up                  # ensure infra, deploy if needed, sync, exec dev
+vechain-dev up                  # ensure infra, deploy if needed, exec dev
 vechain-dev up --redeploy       # force the deploy step even if contracts are on-chain
-vechain-dev up --skip-deploy    # bring infra up without running the deploy step
-vechain-dev deploy              # re-run deploy + recreate indexer (no thor/mongo/explorer restart)
+vechain-dev up --skip-deploy    # bring infra + frontend up without running the deploy step
+vechain-dev deploy              # re-run deploy + recreate indexer (no thor/explorer restart)
 vechain-dev deploy --redeploy   # same, ignoring the on-chain deployment check
-```
-
-Stack lifecycle (no config required):
-
-```bash
-vechain-dev down                # stop the full stack (thor state preserved)
-vechain-dev reset               # nuke all shared infra, volumes, and ~/.vechain-dev/
-vechain-dev sync                # re-merge address book and recreate indexer + explorer
+vechain-dev down                # stop the full stack (thor state preserved; mongo is ephemeral)
+vechain-dev clean               # nuke all shared infra, volumes, and ~/.vechain-dev/
 vechain-dev status              # show registered projects and service health
 ```
 
-Standalone thor-solo (no config required):
+Service control — no config required:
 
 ```bash
 vechain-dev solo up             # start only thor-solo
 vechain-dev solo down           # stop only thor-solo (chain state preserved)
 vechain-dev solo logs [-f]      # tail thor-solo logs
+
+vechain-dev indexer up          # start mongo + vechain-indexer + vechain-indexer-api
+vechain-dev indexer down        # stop these services
+vechain-dev indexer logs [-f]   # tail indexer + indexer-api logs (skips mongo noise)
+vechain-dev indexer recreate    # re-merge address book + force-recreate the indexer containers
 ```
 
 Typical `package.json`:
 
 ```json
 "scripts": {
-  "dev":          "vechain-dev up",
-  "dev:down":     "vechain-dev down",
-  "dev:reset":    "vechain-dev reset",
-  "dev:redeploy": "vechain-dev deploy --redeploy"
+  "dev":              "vechain-dev up",
+  "dev:down":         "vechain-dev down",
+  "dev:clean":        "vechain-dev clean",
+  "dev:deploy":       "vechain-dev deploy",
+  "solo:up":          "vechain-dev solo up",
+  "solo:down":        "vechain-dev solo down",
+  "solo:logs":        "vechain-dev solo logs -f",
+  "indexer:up":       "vechain-dev indexer up",
+  "indexer:down":     "vechain-dev indexer down",
+  "indexer:logs":     "vechain-dev indexer logs -f",
+  "indexer:recreate": "vechain-dev indexer recreate"
 }
 ```
 

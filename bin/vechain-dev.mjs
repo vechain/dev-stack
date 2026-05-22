@@ -27,6 +27,8 @@ const INFRA_SERVICES = [
   'vechain-indexer-api',
   'block-explorer',
 ]
+const INDEXER_SERVICES = ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api']
+const INDEXER_LOG_SERVICES = ['vechain-indexer', 'vechain-indexer-api']
 
 async function shellExec(cmd, { exec = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -42,11 +44,21 @@ async function shellExec(cmd, { exec = false } = {}) {
   })
 }
 
+async function mergeAddressBook(cfg) {
+  step('merging address book')
+  const projects = await readAll()
+  if (cfg && !projects.find((p) => p.project === cfg.project)) {
+    warn(`no registration for project '${cfg.project}' — did the deploy step call registerAddresses?`)
+  }
+  const summary = await writeEnv(projects)
+  detail(`${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
+}
+
 async function ensureThor() {
   step('ensuring docker network')
   await ensureNetwork()
   step('starting thor-solo (chain state preserved)')
-  await composeUp(['base.yaml'], ['thor-solo'])
+  await composeUp(SHARED_FILES, ['thor-solo'])
   await waitForThor()
   await waitHealthy('thor-solo')
 }
@@ -74,28 +86,6 @@ async function runDeployIfNeeded(cfg, { force, skip }) {
   await shellExec(cfg.deploy)
 }
 
-async function mergeAndRecreateInfra(cfg, { recreateExplorer = true } = {}) {
-  step('merging address book')
-  const projects = await readAll()
-  if (cfg && !projects.find((p) => p.project === cfg.project)) {
-    warn(`no registration for project '${cfg.project}' — did the deploy step call registerAddresses?`)
-  }
-  const summary = await writeEnv(projects)
-  detail(`${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
-
-  const services = recreateExplorer
-    ? ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api', 'block-explorer']
-    : ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api']
-
-  if (recreateExplorer) {
-    step('starting mongo + indexer + explorer (fresh state)')
-    await composeUp(SHARED_FILES, services)
-  } else {
-    step('recreating indexer')
-    await composeRecreate(SHARED_FILES, ['vechain-indexer', 'vechain-indexer-api'])
-  }
-}
-
 function printEndpoints() {
   info('shared stack ready')
   info('  thor-solo      → http://localhost:8669')
@@ -113,7 +103,10 @@ async function up({ force = false, skip = false } = {}) {
   await composeRm(SHARED_FILES, INFRA_SERVICES)
 
   await runDeployIfNeeded(cfg, { force, skip })
-  await mergeAndRecreateInfra(cfg)
+
+  await mergeAddressBook(cfg)
+  step('starting mongo + indexer + explorer (fresh state)')
+  await composeUp(SHARED_FILES, INFRA_SERVICES)
 
   printEndpoints()
 
@@ -126,7 +119,9 @@ async function deploy({ force = false } = {}) {
   step(`project: ${cfg.project}`)
   await waitForThor()
   await runDeployIfNeeded(cfg, { force, skip: false })
-  await mergeAndRecreateInfra(cfg, { recreateExplorer: false })
+  await mergeAddressBook(cfg)
+  step('recreating indexer')
+  await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
   info('deploy complete')
 }
 
@@ -137,11 +132,36 @@ async function soloUp() {
 
 async function soloDown() {
   step('stopping thor-solo (chain state preserved)')
-  await composeStop(['base.yaml'], ['thor-solo'])
+  await composeStop(SHARED_FILES, ['thor-solo'])
 }
 
 async function soloLogs({ follow = false } = {}) {
-  await composeLogs(['base.yaml'], ['thor-solo'], { follow })
+  await composeLogs(SHARED_FILES, ['thor-solo'], { follow })
+}
+
+async function indexerUp() {
+  step('ensuring docker network')
+  await ensureNetwork()
+  await mergeAddressBook()
+  step('starting mongo + indexer')
+  await composeUp(SHARED_FILES, INDEXER_SERVICES)
+  info('indexer-api → http://localhost:8089')
+}
+
+async function indexerDown() {
+  step('stopping indexer services (mongo state preserved while containers exist)')
+  await composeStop(SHARED_FILES, INDEXER_SERVICES)
+}
+
+async function indexerLogs({ follow = false } = {}) {
+  await composeLogs(SHARED_FILES, INDEXER_LOG_SERVICES, { follow })
+}
+
+async function indexerRecreate() {
+  await mergeAddressBook()
+  step('recreating indexer')
+  await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
+  info('indexer-api → http://localhost:8089')
 }
 
 async function down() {
@@ -151,23 +171,14 @@ async function down() {
   await composeDown(files)
 }
 
-async function reset() {
+async function clean() {
   step('tearing down shared infra + volumes')
   await composeDown(SHARED_FILES, { volumes: true }).catch((e) => warn(e.message))
   step(`removing ${home()}`)
   await rm(home(), { recursive: true, force: true })
   step('removing docker network')
   await removeNetwork()
-  info('reset complete')
-}
-
-async function sync() {
-  const projects = await readAll()
-  const summary = await writeEnv(projects)
-  step(`merged ${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
-  step('recreating indexer + explorer')
-  await composeRecreate(SHARED_FILES, ['vechain-indexer', 'vechain-indexer-api', 'block-explorer'])
-  info('sync complete')
+  info('clean complete')
 }
 
 async function status() {
@@ -202,36 +213,35 @@ async function status() {
 
 const HELP = `Usage: vechain-dev <command> [flags]
 
-Commands:
+Project lifecycle (requires vechain-dev.config.mjs):
+
   up [--redeploy] [--skip-deploy]
-      Ensure shared infra, run deploy if needed, sync env, restart indexer/explorer, exec dev.
-      --redeploy     force the project's deploy command even if contracts are already on-chain
-      --skip-deploy  bring infra up but don't run the deploy command at all
+      Ensure shared infra, run deploy if needed, restart indexer/explorer, exec dev.
+      --redeploy     force the deploy command even if contracts are already on-chain
+      --skip-deploy  bring infra + frontend up without running the deploy command
 
   deploy [--redeploy]
-      Run the project's deploy command and recreate the indexer (no thor/mongo/explorer restart).
+      Run the project's deploy command and recreate the indexer (no thor/explorer restart).
       Use when you've changed contracts but the rest of the stack is already up.
 
   down
       Stop the full stack (thor state preserved; mongo is ephemeral).
 
-  reset
+  clean
       Tear down all shared infra, volumes, and ~/.vechain-dev/.
-
-  sync
-      Re-merge the address book and recreate indexer + explorer.
 
   status
       Show registered projects and service health.
 
-  solo up
-      Start only thor-solo. No vechain-dev.config.mjs required.
+Service control (no config required):
 
-  solo down
-      Stop only thor-solo. Chain state preserved on the named volume.
+  solo up | down | logs [-f]
+      Lifecycle for thor-solo only. Chain state preserved across down.
 
-  solo logs [-f]
-      Tail thor-solo logs.
+  indexer up | down | logs [-f] | recreate
+      Lifecycle for mongo + vechain-indexer + vechain-indexer-api.
+      'recreate' re-merges the address book and force-recreates the containers
+      (use after a project registers new addresses).
 
 Solo customization (env vars, all optional):
   VECHAIN_DEV_THOR_IMAGE                     docker image (default ghcr.io/vechain/thor:latest)
@@ -244,7 +254,7 @@ Solo customization (env vars, all optional):
 
 const argv = process.argv.slice(2)
 const [cmd, sub, ...rest] = argv
-const flags = new Set(rest.filter((a) => a.startsWith('--') || a === '-f'))
+const subFlags = new Set(rest.filter((a) => a.startsWith('--') || a === '-f'))
 
 async function dispatch() {
   if (!cmd || cmd === '--help' || cmd === '-h') {
@@ -255,12 +265,21 @@ async function dispatch() {
   if (cmd === 'solo') {
     if (sub === 'up') return soloUp()
     if (sub === 'down') return soloDown()
-    if (sub === 'logs') return soloLogs({ follow: flags.has('-f') || flags.has('--follow') })
+    if (sub === 'logs') return soloLogs({ follow: subFlags.has('-f') || subFlags.has('--follow') })
     error(`unknown solo subcommand: ${sub ?? '(none)'} — expected up | down | logs`)
     process.exit(1)
   }
 
-  // top-level commands also accept their flags positionally as argv[1..]
+  if (cmd === 'indexer') {
+    if (sub === 'up') return indexerUp()
+    if (sub === 'down') return indexerDown()
+    if (sub === 'logs') return indexerLogs({ follow: subFlags.has('-f') || subFlags.has('--follow') })
+    if (sub === 'recreate') return indexerRecreate()
+    error(`unknown indexer subcommand: ${sub ?? '(none)'} — expected up | down | logs | recreate`)
+    process.exit(1)
+  }
+
+  // Top-level commands accept their flags positionally as argv[1..]
   const topFlags = new Set([sub, ...rest].filter((a) => a && (a.startsWith('--') || a === '-f')))
   const has = (f) => topFlags.has(f)
 
@@ -271,10 +290,8 @@ async function dispatch() {
       return deploy({ force: has('--redeploy') })
     case 'down':
       return down()
-    case 'reset':
-      return reset()
-    case 'sync':
-      return sync()
+    case 'clean':
+      return clean()
     case 'status':
       return status()
     default:
