@@ -15,7 +15,7 @@ import {
   waitHealthy,
 } from '../lib/docker.mjs'
 import { readAll, writeEnv } from '../lib/addressBook.mjs'
-import { waitForThor } from '../lib/thor.mjs'
+import { waitForIndexerApi, waitForThor } from '../lib/thor.mjs'
 import { isProjectDeployed } from '../lib/check.mjs'
 import { detail, error, info, step, warn } from '../lib/log.mjs'
 import { home } from '../lib/paths.mjs'
@@ -117,6 +117,13 @@ function printEndpoints() {
   info('  block-explorer → http://localhost:8088')
 }
 
+async function waitForInfra({ explorer = true } = {}) {
+  step('waiting for mongo + indexer-api to be ready')
+  await waitHealthy('mongo-node1')
+  await waitForIndexerApi()
+  if (explorer) await waitHealthy('block-explorer')
+}
+
 async function up({ force = false, skip = false } = {}) {
   const cfg = await loadConfig()
   step(`project: ${cfg.project}`)
@@ -131,6 +138,7 @@ async function up({ force = false, skip = false } = {}) {
   await mergeAddressBook(cfg)
   step('starting mongo + indexer + explorer (fresh state)')
   await composeUp(SHARED_FILES, INFRA_SERVICES)
+  await waitForInfra()
 
   printEndpoints()
 }
@@ -145,6 +153,7 @@ async function deploy() {
   await mergeAddressBook(cfg)
   step('recreating indexer')
   await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
+  await waitForInfra({ explorer: false })
   info('deploy complete')
 }
 
@@ -174,11 +183,12 @@ async function indexerUp() {
   await mergeAddressBook()
   step('starting mongo + indexer')
   await composeUp(SHARED_FILES, INDEXER_SERVICES)
+  await waitForInfra({ explorer: false })
   info('indexer-api → http://localhost:8089')
 }
 
 async function indexerDown() {
-  step('stopping indexer services (mongo state preserved while containers exist)')
+  step('stopping indexer services (mongo state is wiped — tmpfs)')
   await composeStop(SHARED_FILES, INDEXER_SERVICES)
 }
 
@@ -190,6 +200,7 @@ async function indexerRecreate() {
   await mergeAddressBook()
   step('recreating indexer')
   await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
+  await waitForInfra({ explorer: false })
   info('indexer-api → http://localhost:8089')
 }
 

@@ -69,10 +69,10 @@ vechain-dev solo logs [-f]      # tail thor-solo logs
 vechain-dev solo clean          # remove the container and the chain-data volume
 
 vechain-dev indexer up          # start mongo + vechain-indexer + vechain-indexer-api
-vechain-dev indexer down        # stop these services (mongo tmpfs preserved)
+vechain-dev indexer down        # stop these services (mongo state is wiped — tmpfs)
 vechain-dev indexer logs [-f]   # tail indexer + indexer-api logs (skips mongo noise)
 vechain-dev indexer recreate    # re-merge address book + force-recreate the indexer containers
-vechain-dev indexer clean       # remove the containers (mongo tmpfs is wiped)
+vechain-dev indexer clean       # remove the containers
 ```
 
 Typical `package.json`:
