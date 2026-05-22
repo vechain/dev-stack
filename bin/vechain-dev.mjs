@@ -112,11 +112,12 @@ async function up({ force = false, skip = false } = {}) {
   printEndpoints()
 }
 
-async function deploy({ force = false } = {}) {
+async function deploy() {
   const cfg = await loadConfig()
   step(`project: ${cfg.project}`)
   await waitForThor()
-  await runDeployIfNeeded(cfg, { force, skip: false })
+  step(`running deploy: ${cfg.deploy}`)
+  await shellExec(cfg.deploy)
   await mergeAddressBook(cfg)
   step('recreating indexer')
   await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
@@ -230,9 +231,10 @@ Project lifecycle (requires vechain-dev.config.mjs):
       --redeploy     force the deploy command even if contracts are already on-chain
       --skip-deploy  bring infra up without running the deploy command
 
-  deploy [--redeploy]
+  deploy
       Run the project's deploy command and recreate the indexer (no thor/explorer restart).
-      Use when you've changed contracts but the rest of the stack is already up.
+      Always runs — no on-chain check. Use when you've changed contracts but
+      the rest of the stack is already up.
 
   down
       Stop the full stack (thor state preserved; mongo is ephemeral).
@@ -301,7 +303,7 @@ async function dispatch() {
     case 'up':
       return up({ force: has('--redeploy'), skip: has('--skip-deploy') })
     case 'deploy':
-      return deploy({ force: has('--redeploy') })
+      return deploy()
     case 'down':
       return down()
     case 'clean':

@@ -52,7 +52,7 @@ vechain-dev up                  # ensure infra, deploy if needed. Exits when inf
 vechain-dev up --redeploy       # force the deploy step even if contracts are on-chain
 vechain-dev up --skip-deploy    # bring infra up without running the deploy step
 vechain-dev deploy              # re-run deploy + recreate indexer (no thor/explorer restart)
-vechain-dev deploy --redeploy   # same, ignoring the on-chain deployment check
+                                # always runs — no on-chain check
 vechain-dev down                # stop the full stack (thor state preserved; mongo is ephemeral)
 vechain-dev clean               # nuke all shared infra, volumes, and ~/.vechain-dev/
 vechain-dev status              # show registered projects and service health
