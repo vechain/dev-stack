@@ -1,6 +1,6 @@
 services:
   thor-solo:
-    image: ghcr.io/vechain/thor:latest
+    image: ${VECHAIN_DEV_THOR_IMAGE:-ghcr.io/vechain/thor:latest}
     container_name: thor-solo
     hostname: thor-solo
     command:
@@ -8,10 +8,10 @@ services:
       - --on-demand
       - --persist
       - --api-addr=0.0.0.0:8669
-      - --api-cors=*
-      - --gas-limit=40000000
-      - --txpool-limit=10000
-      - --txpool-limit-per-account=256
+      - --api-cors=${VECHAIN_DEV_THOR_API_CORS:-*}
+      - --gas-limit=${VECHAIN_DEV_THOR_GAS_LIMIT:-40000000}
+      - --txpool-limit=${VECHAIN_DEV_THOR_TXPOOL_LIMIT:-10000}
+      - --txpool-limit-per-account=${VECHAIN_DEV_THOR_TXPOOL_LIMIT_PER_ACCOUNT:-256}
     ports:
       - "8669:8669"
     volumes:
