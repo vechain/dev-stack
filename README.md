@@ -20,6 +20,7 @@ export default {
   profiles: ['safe', 'accounts', 'transactions'],
   deploy:  'yarn contracts:deploy:solo',
   // optional:
+  // services: ['thor', 'indexer', 'explorer'], // default — see "Selecting services"
   // overlay: 'docker/overlay.yaml',
 }
 ```
@@ -42,6 +43,33 @@ await registerAddresses({
 ```
 
 This writes `~/.vechain-dev/config/my-project.json`.
+
+### Selecting services
+
+`services` controls which parts of the stack `vechain-dev up` brings up. The
+default is the full set:
+
+```js
+services: ['thor', 'indexer', 'explorer']
+```
+
+- `'thor'` — required; the thor-solo node on `:8669`.
+- `'indexer'` — mongo + vechain-indexer + vechain-indexer-api on `:8089`.
+- `'explorer'` — block-explorer on `:8088`.
+
+A client app that only needs the chain can opt out of the rest:
+
+```js
+export default {
+  project: 'my-client-app',
+  services: ['thor'],
+}
+```
+
+When neither `'indexer'` nor `'explorer'` is selected, `deploy` and `profiles`
+become optional (there's no address book to write). `vechain-dev down` and
+`vechain-dev clean` still tear down the full stack so leftover containers from a
+previous config are cleaned up.
 
 ## Commands
 

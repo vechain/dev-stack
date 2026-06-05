@@ -1,6 +1,6 @@
 services:
   block-explorer:
-    image: ${VECHAIN_DEV_EXPLORER_IMAGE:-ghcr.io/vechain/block-explorer:2.41.0}
+    image: ${VECHAIN_DEV_EXPLORER_IMAGE:-vechain/block-explorer:2.42}
     container_name: block-explorer
     hostname: block-explorer
     env_file:
