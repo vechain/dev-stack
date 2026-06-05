@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import { rm } from 'node:fs/promises'
-import { loadConfig } from '../lib/config.mjs'
+import { loadConfig, needsAddressBook } from '../lib/config.mjs'
 import {
   composeDown,
   composeLogs,
@@ -30,6 +30,28 @@ const INFRA_SERVICES = [
 ]
 const INDEXER_SERVICES = ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api']
 const INDEXER_LOG_SERVICES = ['vechain-indexer', 'vechain-indexer-api']
+
+const SERVICE_FILE = {
+  thor: 'base.yaml',
+  indexer: 'indexer.yaml',
+  explorer: 'explorer.yaml',
+}
+
+const SERVICE_CONTAINERS = {
+  indexer: INDEXER_SERVICES,
+  explorer: ['block-explorer'],
+}
+
+function planFor(services) {
+  const files = services.map((s) => SERVICE_FILE[s])
+  const infraServices = services.flatMap((s) => SERVICE_CONTAINERS[s] ?? [])
+  return {
+    files,
+    infraServices,
+    wantsIndexer: services.includes('indexer'),
+    wantsExplorer: services.includes('explorer'),
+  }
+}
 
 async function shellExec(cmd, { exec = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -110,50 +132,72 @@ async function verifyDeployed(cfg) {
   )
 }
 
-function printEndpoints() {
-  info('shared stack ready')
-  info('  thor-solo      → http://localhost:8669')
-  info('  indexer-api    → http://localhost:8089')
-  info('  block-explorer → http://localhost:8088')
+async function waitForInfra({ indexer = true, explorer = true } = {}) {
+  if (indexer) {
+    step('waiting for mongo + indexer-api to be ready')
+    await waitHealthy('mongo-node1')
+    await waitForIndexerApi()
+  }
+  if (explorer) await waitHealthy('block-explorer')
 }
 
-async function waitForInfra({ explorer = true } = {}) {
-  step('waiting for mongo + indexer-api to be ready')
-  await waitHealthy('mongo-node1')
-  await waitForIndexerApi()
-  if (explorer) await waitHealthy('block-explorer')
+function printEndpointsFor({ wantsIndexer, wantsExplorer }) {
+  info('shared stack ready')
+  info('  thor-solo      → http://localhost:8669')
+  if (wantsIndexer) info('  indexer-api    → http://localhost:8089')
+  if (wantsExplorer) info('  block-explorer → http://localhost:8088')
 }
 
 async function up({ force = false, skip = false } = {}) {
   const cfg = await loadConfig()
+  const plan = planFor(cfg.services)
   step(`project: ${cfg.project}`)
+  step(`services: ${cfg.services.join(', ')}`)
 
   await ensureThor()
 
-  step('clearing ephemeral services (mongo + indexer + explorer)')
-  await composeRm(SHARED_FILES, INFRA_SERVICES)
+  if (plan.infraServices.length === 0) {
+    printEndpointsFor(plan)
+    return
+  }
 
-  await runDeployIfNeeded(cfg, { force, skip })
+  step('clearing ephemeral services')
+  await composeRm(plan.files, plan.infraServices)
 
-  await mergeAddressBook(cfg)
-  step('starting mongo + indexer + explorer (fresh state)')
-  await composeUp(SHARED_FILES, INFRA_SERVICES)
-  await waitForInfra()
+  if (needsAddressBook(cfg.services)) {
+    await runDeployIfNeeded(cfg, { force, skip })
+    await mergeAddressBook(cfg)
+  } else if (!skip && cfg.deploy) {
+    step(`running deploy: ${cfg.deploy}`)
+    await shellExec(cfg.deploy)
+  }
 
-  printEndpoints()
+  step('starting infra (fresh state)')
+  await composeUp(plan.files, plan.infraServices)
+  await waitForInfra({ indexer: plan.wantsIndexer, explorer: plan.wantsExplorer })
+
+  printEndpointsFor(plan)
 }
 
 async function deploy() {
   const cfg = await loadConfig()
+  if (!cfg.deploy) {
+    throw new Error(`no 'deploy' command in vechain-dev.config.mjs — nothing to run`)
+  }
+  const plan = planFor(cfg.services)
   step(`project: ${cfg.project}`)
   await waitForThor()
   step(`running deploy: ${cfg.deploy}`)
   await shellExec(cfg.deploy)
-  await verifyDeployed(cfg)
-  await mergeAddressBook(cfg)
-  step('recreating indexer')
-  await composeRecreate(SHARED_FILES, INDEXER_LOG_SERVICES)
-  await waitForInfra({ explorer: false })
+  if (needsAddressBook(cfg.services)) {
+    await verifyDeployed(cfg)
+    await mergeAddressBook(cfg)
+  }
+  if (plan.wantsIndexer) {
+    step('recreating indexer')
+    await composeRecreate(plan.files, INDEXER_LOG_SERVICES)
+    await waitForInfra({ indexer: true, explorer: false })
+  }
   info('deploy complete')
 }
 
@@ -263,6 +307,7 @@ Project lifecycle (requires vechain-dev.config.mjs):
   up [--redeploy] [--skip-deploy]
       Ensure shared infra and run deploy if needed. Exits when infra is ready —
       start your frontend in a separate terminal (e.g. yarn frontend:dev).
+      Only the services listed in cfg.services are started (default: all).
       --redeploy     force the deploy command even if contracts are already on-chain
       --skip-deploy  bring infra up without running the deploy command
 
@@ -270,6 +315,10 @@ Project lifecycle (requires vechain-dev.config.mjs):
       Run the project's deploy command and recreate the indexer (no thor/explorer restart).
       Always runs — no on-chain check. Use when you've changed contracts but
       the rest of the stack is already up.
+
+Config services (vechain-dev.config.mjs):
+  services: ['thor', 'indexer', 'explorer']   // default — opt out by omitting entries
+  // 'thor' is required; 'deploy' + 'profiles' are required when 'indexer' or 'explorer' is enabled
 
   down
       Stop the full stack (thor state preserved; mongo is ephemeral).

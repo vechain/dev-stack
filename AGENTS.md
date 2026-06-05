@@ -18,11 +18,13 @@ Shared infra (one set per machine, kept up across project switches):
 
 Per-project state:
 
-- `vechain-dev.config.mjs` at the consumer project's root (declares `project`, `profiles`, `deploy`, `dev`, optional `overlay`)
+- `vechain-dev.config.mjs` at the consumer project's root (declares `project`, optional `services`, `profiles`, `deploy`, `dev`, optional `overlay`)
 - After deploy, the consumer calls `registerAddresses(...)` which writes `~/.vechain-dev/config/<project>.json`
 - The CLI merges all registered projects' addresses + profiles and writes env files into `~/.vechain-dev/generated/` which the indexer and explorer containers env-file-mount
 
 The point: each consumer deploys its own contracts to thor-solo and registers their addresses; the indexer/explorer see the **union** of every project's addresses + Spring profiles.
+
+Per-consumer opt-out: `services` (default `['thor', 'indexer', 'explorer']`) lets a consumer disable parts of the stack they don't need — e.g. a frontend or backend that talks to thor directly via `THOR_NODE_URL` can declare `services: ['thor']` and the CLI will skip mongo/indexer/explorer entirely. `'thor'` is required; `deploy` + `profiles` are only required when `'indexer'` or `'explorer'` is in the list (since they're the only services that consume the merged address book).
 
 ## Repository layout
 
@@ -45,7 +47,7 @@ genesis/solo.default.json  Default genesis used by thor-solo + indexer
 Two things consumers depend on. Any change here is a breaking change for every downstream project.
 
 1. **`registerAddresses({ project, profiles, addresses })`** — exported from package main. Signature defined in `lib/register.d.ts`. Validates and atomically writes `~/.vechain-dev/config/<project>.json`.
-2. **`vechain-dev` CLI** — commands `up`, `down`, `reset`, `sync`, `status`. The `up` flow is load-config → ensure network → start thor+mongo → run consumer `deploy` → merge address book → recreate indexer+explorer → exec consumer `dev` (the dev process becomes the foreground; signals are forwarded).
+2. **`vechain-dev` CLI** — commands `up`, `down`, `reset`, `sync`, `status`. The `up` flow is load-config → ensure network → start thor+mongo → run consumer `deploy` → merge address book → recreate indexer+explorer → exec consumer `dev` (the dev process becomes the foreground; signals are forwarded). When `services` opts out of `indexer`/`explorer`, the address-book merge and the deploy-then-verify cycle are skipped (the deploy command is still run if declared, but its registration isn't required). Thor-only consumers exit immediately after `ensureThor()`.
 
 ## Conventions to respect
 

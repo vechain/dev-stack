@@ -1,6 +1,6 @@
 services:
   thor-solo:
-    image: ${VECHAIN_DEV_THOR_IMAGE:-ghcr.io/vechain/thor:latest}
+    image: ${VECHAIN_DEV_THOR_IMAGE:-vechain/thor:v2.4.3}
     container_name: thor-solo
     hostname: thor-solo
     command:
