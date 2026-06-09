@@ -59,7 +59,7 @@ Two things consumers depend on. Any change here is a breaking change for every d
 - **Address book is the only contract for inter-project state.** The shape of `~/.vechain-dev/config/<project>.json` (`{ project, profiles, addresses, updatedAt }`) is load-bearing — changing it changes the contract every consumer has already written against.
 - **Spring profile names live in consumer projects.** When adding a new profile-keyed start-block env var to the indexer, append it to `SOLO_START_BLOCKS` in `lib/addressBook.mjs` so its cursor defaults to `0` for solo.
 - **Container/service names are stable identifiers** (`thor-solo`, `mongo-node1`, `vechain-indexer`, `vechain-indexer-api`, `block-explorer`). The CLI references them by name; don't rename without updating every callsite.
-- **Images are pinned via env var with a default tag** in each compose file (e.g. `${VECHAIN_DEV_INDEXER_IMAGE:-ghcr.io/vechain/vechain-indexer/indexer:6.28}`). Bump the default tag when intentionally upgrading.
+- **Images are configurable via env var with a default tag** in each compose file (e.g. `${VECHAIN_DEV_INDEXER_IMAGE:-vechain/indexer:6}`). Override via `VECHAIN_DEV_INDEXER_IMAGE` / `VECHAIN_DEV_INDEXER_API_IMAGE` if you need an exact (non-floating) tag.
 
 ## Testing
 
