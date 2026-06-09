@@ -138,8 +138,8 @@ All optional, all read from the environment:
 | `VECHAIN_DEV_THOR_API_CORS`                 | `*`                              | `--api-cors`                  |
 | `VECHAIN_DEV_GENESIS`                       | bundled `solo.default.json`      | mounted genesis file          |
 | `VECHAIN_DEV_HOME`                          | `~/.vechain-dev`                 | state directory               |
-| `VECHAIN_DEV_INDEXER_IMAGE`                 | `ghcr.io/vechain/vechain-indexer/indexer:6.31.5` | indexer image |
-| `VECHAIN_DEV_INDEXER_API_IMAGE`             | `ghcr.io/vechain/vechain-indexer/api:6.31.5`     | indexer-api image |
+| `VECHAIN_DEV_INDEXER_IMAGE`                 | `vechain/indexer:6`              | indexer image |
+| `VECHAIN_DEV_INDEXER_API_IMAGE`             | `vechain/indexer-api:6`          | indexer-api image |
 | `VECHAIN_DEV_EXPLORER_IMAGE`                | `ghcr.io/vechain/block-explorer:2.41.0`           | block-explorer image |
 
 These work for both `vechain-dev solo up` and `vechain-dev up`.
