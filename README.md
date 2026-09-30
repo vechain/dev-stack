@@ -6,7 +6,7 @@
 
 Shared local development environment for VeChain projects.
 
-Brings up one thor-solo node, one mongo, one vechain-indexer, and one block-explorer that multiple projects can share. Each project deploys its own contracts and registers their addresses with the shared stack; the indexer and explorer pick up the union.
+Brings up one thor-solo node, one Postgres, one vechain-indexer, and one block-explorer that multiple projects can share. Each project deploys its own contracts and registers their addresses with the shared stack; the indexer and explorer pick up the union.
 
 ## Consumer contract
 
@@ -17,7 +17,7 @@ A project joins the stack by providing two things:
 ```js
 export default {
   project: 'my-project',
-  profiles: ['safe', 'accounts', 'transactions'],
+  profiles: ['safe', 'accounts', 'blocks'],
   deploy:  'yarn contracts:deploy:solo',
   // optional:
   // services: ['thor', 'indexer', 'explorer'], // default — see "Selecting services"
@@ -34,7 +34,7 @@ import { registerAddresses } from '@vechain/dev-stack'
 
 await registerAddresses({
   project: 'my-project',
-  profiles: ['safe', 'accounts', 'transactions'],
+  profiles: ['safe', 'accounts', 'blocks'],
   addresses: {
     SAFE_EMITTER_CONTRACT:       '0x...',
     SAFE_PROXY_FACTORY_CONTRACT: '0x...',
@@ -43,6 +43,8 @@ await registerAddresses({
 ```
 
 This writes `~/.vechain-dev/config/my-project.json`.
+
+`profiles` are vechain-indexer Spring profile names. Indexer 10 renamed a few: `transactions` → `blocks`, `validator-reward` → `validator`, `vevote-historic-proposals` → `vevote-historic`. Old names are still translated (with a warning on `up`), but update your config.
 
 ### Selecting services
 
@@ -54,7 +56,7 @@ services: ['thor', 'indexer', 'explorer']
 ```
 
 - `'thor'` — required; the thor-solo node on `:8669`.
-- `'indexer'` — mongo + vechain-indexer + vechain-indexer-api on `:8089`.
+- `'indexer'` — postgres + vechain-indexer + vechain-indexer-api on `:8089`.
 - `'explorer'` — block-explorer on `:8088`.
 
 A client app that only needs the chain can opt out of the rest:
@@ -81,7 +83,7 @@ vechain-dev up --redeploy       # force the deploy step even if contracts are on
 vechain-dev up --skip-deploy    # bring infra up without running the deploy step
 vechain-dev deploy              # re-run deploy + recreate indexer (no thor/explorer restart)
                                 # always runs — no on-chain check
-vechain-dev down                # stop the full stack (thor state preserved; mongo is ephemeral)
+vechain-dev down                # stop the full stack (thor state preserved; postgres is ephemeral)
 vechain-dev clean               # nuke all shared infra, volumes, and ~/.vechain-dev/
 vechain-dev status              # show registered projects and service health
 ```
@@ -96,9 +98,9 @@ vechain-dev solo down           # stop only thor-solo (chain state preserved)
 vechain-dev solo logs [-f]      # tail thor-solo logs
 vechain-dev solo clean          # remove the container and the chain-data volume
 
-vechain-dev indexer up          # start mongo + vechain-indexer + vechain-indexer-api
-vechain-dev indexer down        # stop these services (mongo state is wiped — tmpfs)
-vechain-dev indexer logs [-f]   # tail indexer + indexer-api logs (skips mongo noise)
+vechain-dev indexer up          # start postgres + vechain-indexer + vechain-indexer-api
+vechain-dev indexer down        # stop these services (postgres state is wiped — tmpfs)
+vechain-dev indexer logs [-f]   # tail indexer + indexer-api logs (skips postgres noise)
 vechain-dev indexer recreate    # re-merge address book + force-recreate the indexer containers
 vechain-dev indexer clean       # remove the containers
 ```
@@ -131,16 +133,18 @@ All optional, all read from the environment:
 
 | env var                                     | default                          | maps to                       |
 |---------------------------------------------|----------------------------------|-------------------------------|
-| `VECHAIN_DEV_THOR_IMAGE`                    | `ghcr.io/vechain/thor:latest`    | docker image                  |
+| `VECHAIN_DEV_THOR_IMAGE`                    | `vechain/thor:v2.5.0`            | docker image                  |
 | `VECHAIN_DEV_THOR_GAS_LIMIT`                | `40000000`                       | `--gas-limit`                 |
 | `VECHAIN_DEV_THOR_TXPOOL_LIMIT`             | `10000`                          | `--txpool-limit`              |
 | `VECHAIN_DEV_THOR_TXPOOL_LIMIT_PER_ACCOUNT` | `256`                            | `--txpool-limit-per-account`  |
 | `VECHAIN_DEV_THOR_API_CORS`                 | `*`                              | `--api-cors`                  |
 | `VECHAIN_DEV_GENESIS`                       | bundled `solo.default.json`      | mounted genesis file          |
 | `VECHAIN_DEV_HOME`                          | `~/.vechain-dev`                 | state directory               |
-| `VECHAIN_DEV_INDEXER_IMAGE`                 | `vechain/indexer:6`              | indexer image |
-| `VECHAIN_DEV_INDEXER_API_IMAGE`             | `vechain/indexer-api:6`          | indexer-api image |
-| `VECHAIN_DEV_EXPLORER_IMAGE`                | `ghcr.io/vechain/block-explorer:2.41.0`           | block-explorer image |
+| `VECHAIN_DEV_INDEXER_IMAGE`                 | `vechain/indexer:10.6`           | indexer image |
+| `VECHAIN_DEV_INDEXER_API_IMAGE`             | `vechain/indexer-api:10.6`       | indexer-api image |
+| `VECHAIN_DEV_POSTGRES_IMAGE`                | `postgres:16`                    | indexer database image |
+| `VECHAIN_DEV_POSTGRES_PORT`                 | `5432`                           | host port for postgres |
+| `VECHAIN_DEV_EXPLORER_IMAGE`                | `vechain/block-explorer:3.25`    | block-explorer image |
 
 These work for both `vechain-dev solo up` and `vechain-dev up`.
 
@@ -171,4 +175,4 @@ The indexer still merges env vars across projects, so two checkouts that registe
 | thor-solo      | http://localhost:8669     |
 | indexer-api    | http://localhost:8089     |
 | block-explorer | http://localhost:8088     |
-| mongo          | mongodb://localhost:27017 |
+| postgres       | postgresql://indexer:password@localhost:5432/vechain |
