@@ -11,7 +11,7 @@ A small Node.js (ESM, Node ≥20) package that brings up a **shared** local VeCh
 Shared infra (one set per machine, kept up across project switches):
 
 - `thor-solo` — VeChain node in solo mode (port 8669)
-- `mongo-node1` — single-node Mongo replica set (port 27017)
+- `vechain-postgres` — Postgres 16 backing the indexer (port 5432; db `vechain`, users `indexer` / read-only `api`)
 - `vechain-indexer` + `vechain-indexer-api` — chain indexer + REST API (api on 8089)
 - `block-explorer` — VeChain block explorer UI (port 8088)
 - Docker network: `vechain-thor` (external)
@@ -24,7 +24,7 @@ Per-project state:
 
 The point: each consumer deploys its own contracts to thor-solo and registers their addresses; the indexer/explorer see the **union** of every project's addresses + Spring profiles.
 
-Per-consumer opt-out: `services` (default `['thor', 'indexer', 'explorer']`) lets a consumer disable parts of the stack they don't need — e.g. a frontend or backend that talks to thor directly via `THOR_NODE_URL` can declare `services: ['thor']` and the CLI will skip mongo/indexer/explorer entirely. `'thor'` is required; `deploy` + `profiles` are only required when `'indexer'` or `'explorer'` is in the list (since they're the only services that consume the merged address book).
+Per-consumer opt-out: `services` (default `['thor', 'indexer', 'explorer']`) lets a consumer disable parts of the stack they don't need — e.g. a frontend or backend that talks to thor directly via `THOR_NODE_URL` can declare `services: ['thor']` and the CLI will skip postgres/indexer/explorer entirely. `'thor'` is required; `deploy` + `profiles` are only required when `'indexer'` or `'explorer'` is in the list (since they're the only services that consume the merged address book).
 
 ## Repository layout
 
@@ -47,7 +47,7 @@ genesis/solo.default.json  Default genesis used by thor-solo + indexer
 Two things consumers depend on. Any change here is a breaking change for every downstream project.
 
 1. **`registerAddresses({ project, profiles, addresses })`** — exported from package main. Signature defined in `lib/register.d.ts`. Validates and atomically writes `~/.vechain-dev/config/<project>.json`.
-2. **`vechain-dev` CLI** — commands `up`, `down`, `reset`, `sync`, `status`. The `up` flow is load-config → ensure network → start thor+mongo → run consumer `deploy` → merge address book → recreate indexer+explorer → exec consumer `dev` (the dev process becomes the foreground; signals are forwarded). When `services` opts out of `indexer`/`explorer`, the address-book merge and the deploy-then-verify cycle are skipped (the deploy command is still run if declared, but its registration isn't required). Thor-only consumers exit immediately after `ensureThor()`.
+2. **`vechain-dev` CLI** — commands `up`, `down`, `reset`, `sync`, `status`. The `up` flow is load-config → ensure network → start thor → run consumer `deploy` → merge address book → recreate indexer+explorer → exec consumer `dev` (the dev process becomes the foreground; signals are forwarded). When `services` opts out of `indexer`/`explorer`, the address-book merge and the deploy-then-verify cycle are skipped (the deploy command is still run if declared, but its registration isn't required). Thor-only consumers exit immediately after `ensureThor()`.
 
 ## Conventions to respect
 
@@ -57,20 +57,22 @@ Two things consumers depend on. Any change here is a breaking change for every d
 - **All paths go through `lib/paths.mjs`.** Don't hardcode `~/.vechain-dev/...` elsewhere. If a new path is needed, add a helper there.
 - **Compose invocations go through `lib/docker.mjs`.** Don't `spawn('docker', ...)` directly in the CLI; reuse `composeUp` / `composeDown` / `composeRecreate` / `waitHealthy`.
 - **Address book is the only contract for inter-project state.** The shape of `~/.vechain-dev/config/<project>.json` (`{ project, profiles, addresses, updatedAt }`) is load-bearing — changing it changes the contract every consumer has already written against.
-- **Spring profile names live in consumer projects.** When adding a new profile-keyed start-block env var to the indexer, append it to `SOLO_START_BLOCKS` in `lib/addressBook.mjs` so its cursor defaults to `0` for solo.
-- **Container/service names are stable identifiers** (`thor-solo`, `mongo-node1`, `vechain-indexer`, `vechain-indexer-api`, `block-explorer`). The CLI references them by name; don't rename without updating every callsite.
-- **Images are configurable via env var with a default tag** in each compose file (e.g. `${VECHAIN_DEV_INDEXER_IMAGE:-vechain/indexer:6}`). Override via `VECHAIN_DEV_INDEXER_IMAGE` / `VECHAIN_DEV_INDEXER_API_IMAGE` if you need an exact (non-floating) tag.
+- **Spring profile names live in consumer projects.** When adding a new profile-keyed start-block env var to the indexer, append it to `SOLO_START_BLOCKS` in `lib/addressBook.mjs` so its cursor defaults to `0` for solo. When the indexer renames or folds a profile, add the old name to `RENAMED_PROFILES` there — Spring silently ignores unknown profiles, so an unmapped old name just drops that data.
+- **Container/service names are stable identifiers** (`thor-solo`, `vechain-postgres`, `vechain-indexer`, `vechain-indexer-api`, `block-explorer`). The CLI references them by name; don't rename without updating every callsite.
+- **Images are configurable via env var with a default tag** in each compose file (e.g. `${VECHAIN_DEV_INDEXER_IMAGE:-vechain/indexer:10.6}`). Override via `VECHAIN_DEV_INDEXER_IMAGE` / `VECHAIN_DEV_INDEXER_API_IMAGE` if you need an exact (non-floating) tag.
 
 ## Testing
 
-- `npm test` runs `node --test` (Node's built-in test runner). There are no test files yet — if you add features, add tests next to the module under `lib/<name>.test.mjs` and they'll be picked up automatically.
+- `npm test` runs `node --test` (Node's built-in test runner). Tests live next to the module as `lib/<name>.test.mjs` and are picked up automatically.
 - Manual end-to-end check: in a consumer project with a `vechain-dev.config.mjs`, run `vechain-dev up` and confirm thor-solo (8669), indexer-api (8089), and block-explorer (8088) respond. `vechain-dev status` summarises this.
 
 ## Things that commonly surprise
 
-- `vechain-dev down` stops the whole stack (shared + overlay). The thor-data volume is preserved — chain state, deployed contracts, and any test fixtures survive. Mongo's `/data/db` and `/data/configdb` are mounted as `tmpfs` (RAM-backed) so the indexer reindexes from scratch on every `up`. The tmpfs is necessary because the `mongo:8` image declares `VOLUME /data/db` in its Dockerfile — without an explicit override, Docker would auto-create anonymous volumes that survive container recreation. Use `vechain-dev reset` only when you want to wipe thor too.
+- `vechain-dev down` stops the whole stack (shared + overlay). The thor-data volume is preserved — chain state, deployed contracts, and any test fixtures survive. Postgres's `/var/lib/postgresql/data` is mounted as `tmpfs` (RAM-backed) so the indexer reindexes from scratch on every `up`. The tmpfs is necessary because the `postgres:16` image declares `VOLUME /var/lib/postgresql/data` in its Dockerfile — without an explicit override, Docker would auto-create anonymous volumes that survive container recreation. (Postgres 18+ moved its data dir to `/var/lib/postgresql`; update the tmpfs path if you bump the major.) Use `vechain-dev reset` only when you want to wipe thor too.
 - `up` always **force-recreates** indexer + indexer-api + block-explorer so they re-read the freshly merged env files. Don't optimise that away — it's how new addresses become visible without a manual restart.
 - If the consumer's deploy script forgets to call `registerAddresses`, `up` warns but proceeds. The merged env files will just be missing that project's addresses.
+- The indexer (≥ 8.38) is Postgres-only. It runs the Flyway migrations and creates the read-only `api` role on startup, so `vechain-indexer-api` waits for the indexer's liveness healthcheck, not just for Postgres. Upgrading from the Mongo-era stack leaves `mongo-node1` / `mongo-setup` orphans in the `vechain-dev` compose project; `removeLegacyContainers()` in `lib/docker.mjs` clears them on `up` / `indexer up`.
+- block-explorer 3.25.x is the last line published as a Docker image (later releases ship as a CDN bundle). In dev mode it calls thor and the indexer **from the browser** at `localhost:8669` / `localhost:8089`, so those host ports are load-bearing.
 - The indexer container gets `SPRING_PROFILES_ACTIVE=indexer,<union of project profiles>`. The indexer-api gets the same union **without** the `indexer` profile. This split is intentional.
 
 ## When working on this package

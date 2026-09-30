@@ -10,6 +10,7 @@ import {
   composeStop,
   composeUp,
   ensureNetwork,
+  removeLegacyContainers,
   removeNetwork,
   removeVolume,
   waitHealthy,
@@ -21,14 +22,7 @@ import { detail, error, info, step, warn } from '../lib/log.mjs'
 import { home } from '../lib/paths.mjs'
 
 const SHARED_FILES = ['base.yaml', 'indexer.yaml', 'explorer.yaml']
-const INFRA_SERVICES = [
-  'mongo-node1',
-  'mongo-setup',
-  'vechain-indexer',
-  'vechain-indexer-api',
-  'block-explorer',
-]
-const INDEXER_SERVICES = ['mongo-node1', 'mongo-setup', 'vechain-indexer', 'vechain-indexer-api']
+const INDEXER_SERVICES = ['vechain-postgres', 'vechain-indexer', 'vechain-indexer-api']
 const INDEXER_LOG_SERVICES = ['vechain-indexer', 'vechain-indexer-api']
 
 const SERVICE_FILE = {
@@ -74,6 +68,9 @@ async function mergeAddressBook(cfg) {
     warn(`no registration for project '${cfg.project}' — did the deploy step call registerAddresses?`)
   }
   const summary = await writeEnv(projects)
+  for (const r of summary.renamed) {
+    warn(`project '${r.project}' declares indexer profile '${r.from}', which is now '${r.to}' — update its vechain-dev.config.mjs`)
+  }
   detail(`${projects.length} project(s), ${summary.profileCount} profile(s), ${summary.addressCount} address var(s)`)
 }
 
@@ -134,8 +131,9 @@ async function verifyDeployed(cfg) {
 
 async function waitForInfra({ indexer = true, explorer = true } = {}) {
   if (indexer) {
-    step('waiting for mongo + indexer-api to be ready')
-    await waitHealthy('mongo-node1')
+    step('waiting for postgres + indexer + indexer-api to be ready')
+    await waitHealthy('vechain-postgres')
+    await waitHealthy('vechain-indexer', 120_000)
     await waitForIndexerApi()
   }
   if (explorer) await waitHealthy('block-explorer')
@@ -162,6 +160,7 @@ async function up({ force = false, skip = false } = {}) {
   }
 
   step('clearing ephemeral services')
+  await removeLegacyContainers()
   await composeRm(plan.files, plan.infraServices)
 
   if (needsAddressBook(cfg.services)) {
@@ -225,14 +224,15 @@ async function indexerUp() {
   step('ensuring docker network')
   await ensureNetwork()
   await mergeAddressBook()
-  step('starting mongo + indexer')
+  await removeLegacyContainers()
+  step('starting postgres + indexer')
   await composeUp(SHARED_FILES, INDEXER_SERVICES)
   await waitForInfra({ explorer: false })
   info('indexer-api → http://localhost:8089')
 }
 
 async function indexerDown() {
-  step('stopping indexer services (mongo state is wiped — tmpfs)')
+  step('stopping indexer services (postgres state is wiped — tmpfs)')
   await composeStop(SHARED_FILES, INDEXER_SERVICES)
 }
 
@@ -249,7 +249,7 @@ async function indexerRecreate() {
 }
 
 async function indexerClean() {
-  step('removing indexer + mongo containers (mongo tmpfs is wiped)')
+  step('removing indexer + postgres containers (postgres tmpfs is wiped)')
   await composeRm(SHARED_FILES, INDEXER_SERVICES)
 }
 
@@ -321,7 +321,7 @@ Config services (vechain-dev.config.mjs):
   // 'thor' is required; 'deploy' + 'profiles' are required when 'indexer' or 'explorer' is enabled
 
   down
-      Stop the full stack (thor state preserved; mongo is ephemeral).
+      Stop the full stack (thor state preserved; postgres is ephemeral).
 
   clean
       Tear down all shared infra, volumes, and ~/.vechain-dev/.
@@ -336,13 +336,13 @@ Service control (no config required):
       'clean' removes the container and the chain-data volume.
 
   indexer up | down | logs [-f] | recreate | clean
-      Lifecycle for mongo + vechain-indexer + vechain-indexer-api.
+      Lifecycle for postgres + vechain-indexer + vechain-indexer-api.
       'recreate' re-merges the address book and force-recreates the containers
       (use after a project registers new addresses).
-      'clean' removes the containers and wipes the mongo tmpfs.
+      'clean' removes the containers and wipes the postgres tmpfs.
 
 Solo customization (env vars, all optional):
-  VECHAIN_DEV_THOR_IMAGE                     docker image (default ghcr.io/vechain/thor:latest)
+  VECHAIN_DEV_THOR_IMAGE                     docker image (default vechain/thor:v2.5.0)
   VECHAIN_DEV_THOR_GAS_LIMIT                 block gas limit (default 40000000)
   VECHAIN_DEV_THOR_TXPOOL_LIMIT              global txpool size (default 10000)
   VECHAIN_DEV_THOR_TXPOOL_LIMIT_PER_ACCOUNT  per-account txpool size (default 256)
