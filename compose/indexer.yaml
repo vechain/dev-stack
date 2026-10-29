@@ -21,7 +21,7 @@ services:
       - vechain-thor
 
   vechain-indexer:
-    image: ${VECHAIN_DEV_INDEXER_IMAGE:-vechain/indexer:10.6}
+    image: ${VECHAIN_DEV_INDEXER_IMAGE:-vechain/indexer:10.14}
     container_name: vechain-indexer
     depends_on:
       vechain-postgres:
@@ -50,7 +50,7 @@ services:
       - vechain-thor
 
   vechain-indexer-api:
-    image: ${VECHAIN_DEV_INDEXER_API_IMAGE:-vechain/indexer-api:10.6}
+    image: ${VECHAIN_DEV_INDEXER_API_IMAGE:-vechain/indexer-api:10.14}
     container_name: vechain-indexer-api
     depends_on:
       vechain-indexer:
