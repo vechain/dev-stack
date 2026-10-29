@@ -140,8 +140,8 @@ All optional, all read from the environment:
 | `VECHAIN_DEV_THOR_API_CORS`                 | `*`                              | `--api-cors`                  |
 | `VECHAIN_DEV_GENESIS`                       | bundled `solo.default.json`      | mounted genesis file          |
 | `VECHAIN_DEV_HOME`                          | `~/.vechain-dev`                 | state directory               |
-| `VECHAIN_DEV_INDEXER_IMAGE`                 | `vechain/indexer:10.6`           | indexer image |
-| `VECHAIN_DEV_INDEXER_API_IMAGE`             | `vechain/indexer-api:10.6`       | indexer-api image |
+| `VECHAIN_DEV_INDEXER_IMAGE`                 | `vechain/indexer:10.14`          | indexer image |
+| `VECHAIN_DEV_INDEXER_API_IMAGE`             | `vechain/indexer-api:10.14`      | indexer-api image |
 | `VECHAIN_DEV_POSTGRES_IMAGE`                | `postgres:16`                    | indexer database image |
 | `VECHAIN_DEV_POSTGRES_PORT`                 | `5432`                           | host port for postgres |
 | `VECHAIN_DEV_EXPLORER_IMAGE`                | `vechain/block-explorer:3.25`    | block-explorer image |
